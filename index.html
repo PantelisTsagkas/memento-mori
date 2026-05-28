@@ -495,11 +495,21 @@ function render() {
   const msPerWeek   = 7 * 24 * 60 * 60 * 1000;
   const livedMs     = now - dob;
   const livedWeeks  = Math.floor(livedMs / msPerWeek);
-  const currentWeek = livedWeeks; // 0-indexed
+
+  // Determine current grid position using calendar years (birthday-to-birthday)
+  // to avoid drift from 52 weeks != 1 year
+  const ageYear = now.getFullYear() - dob.getFullYear() -
+    (now < new Date(now.getFullYear(), dob.getMonth(), dob.getDate()) ? 1 : 0);
+  const lastBirthday = new Date(dob.getFullYear() + ageYear, dob.getMonth(), dob.getDate());
+  const nextBirthday = new Date(dob.getFullYear() + ageYear + 1, dob.getMonth(), dob.getDate());
+  const fractionOfYear = (now - lastBirthday) / (nextBirthday - lastBirthday);
+  const weekInYear = Math.floor(fractionOfYear * 52);
+  const currentWeek = ageYear * 52 + weekInYear; // grid index
 
   // ── Stats ────────────────────────────────────────────────────────────────
   const livedYears  = (livedMs / (365.25 * 24 * 60 * 60 * 1000));
   const weeksLeft   = Math.max(totalWeeks - livedWeeks, 0);
+  const yearsLeft   = (weeksLeft / 52).toFixed(1);
   const pct         = Math.min(100, ((livedWeeks / totalWeeks) * 100)).toFixed(1);
 
   document.getElementById('stats').innerHTML = `
@@ -528,16 +538,26 @@ function render() {
   document.getElementById('progress-fill').style.width = pct + '%';
   document.getElementById('total-squares').textContent = totalWeeks.toLocaleString();
 
-  // ── Column labels (months) ───────────────────────────────────────────────
+  // ── Column labels (approx months, starting from birth month) ─────────────
   const colLabels = document.getElementById('col-labels');
   colLabels.innerHTML = '';
   const monthNames = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
-  const monthStartCols = [0, 4, 9, 13, 17, 22, 26, 30, 35, 39, 43, 48];
+  const birthMonth = dob.getMonth(); // 0-indexed
+  // Calculate positions for exactly 12 labels
+  const monthPositions = new Set();
+  for (let m = 0; m < 12; m++) {
+    monthPositions.add(Math.round(m * 52 / 12));
+  }
+  let monthCounter = 0;
   for (let c = 0; c < 52; c++) {
-    const idx = monthStartCols.indexOf(c);
     const span = document.createElement('span');
     span.className = 'col-label';
-    span.textContent = idx !== -1 ? monthNames[idx] : '';
+    if (monthPositions.has(c)) {
+      span.textContent = monthNames[(birthMonth + monthCounter) % 12];
+      monthCounter++;
+    } else {
+      span.textContent = '';
+    }
     colLabels.appendChild(span);
   }
 
@@ -579,6 +599,7 @@ function render() {
     sq.addEventListener('mouseenter', (e) => {
       const weekDate = new Date(dob.getTime() + i * msPerWeek);
       const endDate  = new Date(dob.getTime() + (i+1) * msPerWeek);
+      const age      = (i / 52).toFixed(1);
       ttTitle.textContent  = `Age ${Math.floor(i/52)}, Week ${weekNum+1}`;
       ttStage.style.color  = stage.color;
       ttStage.textContent  = stage.label + (isCurrent ? ' ← you are here' : '');
@@ -594,10 +615,12 @@ function render() {
     grid.appendChild(sq);
   }
 
+  // Scroll current week into view (roughly)
   setTimeout(() => {
     const yearRow = Math.floor(currentWeek / 52);
     const approxTop = yearRow * (parseInt(getComputedStyle(document.documentElement).getPropertyValue('--sq')) + parseInt(getComputedStyle(document.documentElement).getPropertyValue('--gap')));
-    // scroll current year into vertical centre
+    const container = document.querySelector('.grid-scroll');
+    // vertical centering
     window.scrollTo({ top: document.querySelector('#grid').offsetTop + approxTop - window.innerHeight/2, behavior: 'smooth' });
   }, 400);
 }
